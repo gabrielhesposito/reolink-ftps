@@ -20,14 +20,14 @@ resource "random_id" "suffix" {
 }
 
 locals {
-  server_name               = "prod-personal-transfer-server"
- # users                     = var.users_file != null ? (fileexists(var.users_file) ? csvdecode(file(var.users_file)) : []) : [] # Read users from CSV
-  vpc_id                    = module.vpc.vpc_attributes.id
-  public_subnets            = flatten([for _, value in module.vpc.public_subnet_attributes_by_az : [value.id]])
-  private_subnets           = flatten([for _, value in module.vpc.private_subnet_attributes_by_az : [value.id]])
+  server_name = "prod-personal-transfer-server"
+  # users                     = var.users_file != null ? (fileexists(var.users_file) ? csvdecode(file(var.users_file)) : []) : [] # Read users from CSV
+  vpc_id          = module.vpc.vpc_attributes.id
+  public_subnets  = flatten([for _, value in module.vpc.public_subnet_attributes_by_az : [value.id]])
+  private_subnets = flatten([for _, value in module.vpc.private_subnet_attributes_by_az : [value.id]])
   #ingress_cidr_blocks_list  = [for cidr in split(",", var.sftp_ingress_cidr_block) : trimspace(cidr)]
   #egress_cidr_blocks_list   = [for cidr in split(",", var.sftp_egress_cidr_block) : trimspace(cidr)]
-  az_count                  = 2
+  az_count = 2
 }
 
 data "aws_caller_identity" "current" {}
@@ -37,10 +37,10 @@ data "aws_caller_identity" "current" {}
 ###################################################################
 module "transfer_server" {
   source = "aws-ia/transfer-family/aws"
-  
-  domain                   = "S3"
-  protocols                = ["FTPS"]
-  endpoint_type            = "VPC"
+
+  domain        = "S3"
+  protocols     = ["FTPS"]
+  endpoint_type = "VPC"
   endpoint_details = {
     address_allocation_ids = aws_eip.sftp[*].allocation_id
     security_group_ids     = [aws_security_group.sftp.id]
@@ -51,7 +51,7 @@ module "transfer_server" {
   dns_provider             = "route53"
   custom_hostname          = "ftps.gespo.me"
   route53_hosted_zone_name = "Z385B2JMGHKW93"
-  identity_provider        = "SERVICE_MANAGED"
+  identity_provider        = "AWS_DIRECTORY_SERVICE"
   security_policy_name     = "TransferSecurityPolicy-2024-01" # https://docs.aws.amazon.com/transfer/latest/userguide/security-policies.html#security-policy-transfer-2024-01
   enable_logging           = true
   log_retention_days       = 30 # This can be modified based on requirements
@@ -61,28 +61,38 @@ module "transfer_server" {
   directory_id             = aws_directory_service_directory.ad.id
 }
 
+
+module "acm_request_certificate" {
+  source = "cloudposse/acm-request-certificate/aws"
+  # Cloud Posse recommends pinning every module to a specific version
+  version                           = "v0.18.1"
+  domain_name                       = "ftps.gespo.me"
+  process_domain_validation_options = true
+  ttl                               = "300"
+}
+
 #module "sftp_users" {
 #  source = "aws-ia/transfer-family/aws//modules/transfer-users"
 #    users  = local.users
 #  create_test_user = true # Test user is for demo purposes. Key and Access Management required for the created secrets 
 
- # server_id = module.transfer_server.server_id
+# server_id = module.transfer_server.server_id
 
-  #s3_bucket_name = module.s3_bucket.s3_bucket_id
-  #s3_bucket_arn  = module.s3_bucket.s3_bucket_arn
+#s3_bucket_name = module.s3_bucket.s3_bucket_id
+#s3_bucket_arn  = module.s3_bucket.s3_bucket_arn
 
-  #kms_key_id = aws_kms_key.transfer_family_key.arn
+#kms_key_id = aws_kms_key.transfer_family_key.arn
 #}
 
 ###################################################################
 # Create VPC for Transfer Server
 ###################################################################
 module "vpc" {
-  source   = "git::https://github.com/aws-ia/terraform-aws-vpc.git?ref=v4.5.0"
+  source = "git::https://github.com/aws-ia/terraform-aws-vpc.git?ref=v4.5.0"
 
-  name                          = "${local.server_name}-vpc"
-  cidr_block                    = "10.0.0.0/21"
-  az_count                      = local.az_count
+  name       = "${local.server_name}-vpc"
+  cidr_block = "10.0.0.0/21"
+  az_count   = local.az_count
 
   subnets = {
     public = {
@@ -90,7 +100,7 @@ module "vpc" {
       netmask                   = 27
       nat_gateway_configuration = "all_azs" # options: "single_az", "none"
     }
-      private = {
+    private = {
       name_prefix               = "${local.server_name}-private-subnet"
       netmask                   = 27
       nat_gateway_configuration = "all_azs" # options: "single_az", "none"
@@ -107,10 +117,10 @@ resource "aws_eip" "sftp" {
 }
 
 resource "aws_security_group" "sftp" {
-  name                    = "${local.server_name}-sftp-sg"
-  description             = "Security group for VPC endpoint of AWS Transfer Family SFTP"
-  vpc_id                  = local.vpc_id
-  revoke_rules_on_delete  = true
+  name                   = "${local.server_name}-sftp-sg"
+  description            = "Security group for VPC endpoint of AWS Transfer Family SFTP"
+  vpc_id                 = local.vpc_id
+  revoke_rules_on_delete = true
 
   tags = {
     Environment = "prod"
@@ -127,22 +137,22 @@ resource "aws_security_group" "sftp" {
 #  to_port           = 22
 #  cidr_ipv4         = each.value
 
- # tags = {
-  #  Name = "${local.server_name}-sftp-ingress-${index(local.ingress_cidr_blocks_list, each.value)}"
-  #}
+# tags = {
+#  Name = "${local.server_name}-sftp-ingress-${index(local.ingress_cidr_blocks_list, each.value)}"
+#}
 #}
 
 # Separate Egress Rule for SFTP
 #resource "aws_vpc_security_group_egress_rule" "sftp_egress" {
 #  for_each          = toset(local.egress_cidr_blocks_list)
 #  security_group_id = aws_security_group.sftp.id
- # description       = "Allow outbound traffic"
- # ip_protocol       = "-1"
- # cidr_ipv4         = each.value
+# description       = "Allow outbound traffic"
+# ip_protocol       = "-1"
+# cidr_ipv4         = each.value
 
-  #tags = {
-   # Name = "${local.server_name}-sftp-egress-${index(local.egress_cidr_blocks_list, each.value)}"
-  #}
+#tags = {
+# Name = "${local.server_name}-sftp-egress-${index(local.egress_cidr_blocks_list, each.value)}"
+#}
 #}
 
 ###################################################################
