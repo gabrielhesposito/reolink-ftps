@@ -47,6 +47,7 @@ module "transfer_server" {
     subnet_ids             = local.public_subnets
     vpc_id                 = local.vpc_id
   }
+  acm_certificate_arn      = module.acm_request_certificate.arn
   server_name              = "prod-personal-transfer-server"
   dns_provider             = "route53"
   custom_hostname          = "ftps.gespo.me"
@@ -69,6 +70,7 @@ module "acm_request_certificate" {
   domain_name                       = "ftps.gespo.me"
   process_domain_validation_options = true
   ttl                               = "300"
+  zone_id = "Z385B2JMGHKW93"
 }
 
 #module "sftp_users" {
