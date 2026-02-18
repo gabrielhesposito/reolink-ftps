@@ -59,7 +59,7 @@ module "transfer_server" {
   log_group_kms_key_id     = aws_kms_key.transfer_family_key.arn
   logging_role             = null
   workflow_details         = null
-  directory_id             = aws_directory_service_directory.ad.id
+  directory_id             = module.ad.directory_id
 }
 
 
@@ -70,7 +70,7 @@ module "acm_request_certificate" {
   domain_name                       = "ftps.gespo.me"
   process_domain_validation_options = true
   ttl                               = "300"
-  zone_id = "Z385B2JMGHKW93"
+  zone_id                           = "Z385B2JMGHKW93"
 }
 
 #module "sftp_users" {
@@ -90,7 +90,7 @@ module "acm_request_certificate" {
 # Create VPC for Transfer Server
 ###################################################################
 module "vpc" {
-  source = "git::https://github.com/aws-ia/terraform-aws-vpc.git?ref=v4.5.0"
+  source = "git::https://github.com/aws-ia/terraform-aws-vpc.git?ref=v4.7.3"
 
   name       = "${local.server_name}-vpc"
   cidr_block = "10.0.0.0/21"
@@ -243,14 +243,30 @@ resource "aws_kms_key_policy" "transfer_family_key_policy" {
 # Create AD via AWS Directory Service
 ###################################################################
 
-resource "aws_directory_service_directory" "ad" {
-  name     = "internal.gespo.me"
-  password = "SuperSecretPassw0rd"
-  size     = "Small"
+##-----------------------------------------------------------------------------
+## Simple Active Directory Module
+## This module sets up a Simple Active Directory within the specified VPC and subnets.
+##-----------------------------------------------------------------------------
 
-  vpc_settings {
-    vpc_id     = local.vpc_id
-    subnet_ids = local.private_subnets
-  }
 
+module "ad" {
+  source         = "git::https://github.com/clouddrove/terraform-aws-active-directory.git?ref=1.0.3"
+  environment    = "test"
+  name           = "ad-reolink"
+  label_order    = ["name", "environment"]
+  directory_type = "SimpleAD"
+  subnet_ids     = local.public_subnets
+  vpc_settings   = { vpc_id : local.vpc_id, subnet_ids : join(",", local.public_subnets) }
+  directory_name = "ad.gespo.me"
+  ad_password    = "xyz123@abc"
+  ip_rules       = var.ip_rules
+
+  # Additional optional parameters for more features
+  edition     = "Standard" # Can be "Standard" or "Enterprise"
+  short_name  = "clouddrove"
+  description = "Simple AD for reolink Storage"
+  enable_sso  = false
+  # Set to true to enable Single Sign-On (SSO) for Microsoft AD
+  # Uncomment the following line to set an alias for the Microsoft AD
+  # alias       = "clouddrove-ad"
 }
